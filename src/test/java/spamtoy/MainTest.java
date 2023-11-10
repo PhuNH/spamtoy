@@ -9,13 +9,18 @@ import java.io.*;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static org.junit.Assert.*;
 
 public class MainTest {
+    private static final int SPAM_COUNT = 50, HAM_COUNT = 50,
+            MONEY_FROM = 10, MONEY_BOUND = 50,
+            HAM_LEN_FROM = 30, HAM_LEN_BOUND = 151;
     private final ByteArrayOutputStream outContent = new ByteArrayOutputStream();
     private final PrintStream originalOut = System.out;
     private static String[] spams;
+    private static String[] hams;
 
     @Before
     public void setUpStreams() {
@@ -51,6 +56,29 @@ public class MainTest {
         public String toString() {
             return String.format(template, recipient, sender, amount);
         }
+    }
+
+    private static InputStream getInputStream(String file) {
+        ClassLoader clsLoader = MainTest.class.getClassLoader();
+        InputStream inStream = clsLoader.getResourceAsStream(file);
+
+        if (inStream == null) {
+            throw new IllegalArgumentException(file + " not found");
+        }
+        return inStream;
+    }
+
+    private static ArrayList<String> readLines(InputStream inStream) {
+        String line;
+        ArrayList<String> lines = new ArrayList<>();
+        try (InputStreamReader streamReader = new InputStreamReader(inStream);
+             BufferedReader reader = new BufferedReader(streamReader)) {
+            while ((line = reader.readLine()) != null)
+                lines.add(line);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return lines;
     }
 
     /**
@@ -100,40 +128,40 @@ public class MainTest {
             %2$s"""
         };
         String recipientsFile = "recipients.txt", sendersFile = "senders.txt";
-        ArrayList<String> recipients = new ArrayList<>(), senders = new ArrayList<>();
-        ClassLoader clsLoader = MainTest.class.getClassLoader();
-        String line;
+        ArrayList<String> recipients = readLines(getInputStream(recipientsFile));
+        ArrayList<String> senders = readLines(getInputStream(sendersFile));
 
-        try (InputStream inStream = clsLoader.getResourceAsStream(recipientsFile);
-             InputStreamReader streamReader = new InputStreamReader(inStream);
-             BufferedReader reader = new BufferedReader(streamReader)) {
-            while ((line = reader.readLine()) != null)
-                recipients.add(line);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        try (InputStream inStream = clsLoader.getResourceAsStream(sendersFile);
-             InputStreamReader streamReader = new InputStreamReader(inStream);
-             BufferedReader reader = new BufferedReader(streamReader)) {
-            while ((line = reader.readLine()) != null)
-                senders.add(line);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        int spamCount = 50;
-        spams = new String[spamCount];
-        int[] spamRecipientIndices = getIndicesRandomly(spamCount, recipients.size());
-        int[] spamSenderIndices = getIndicesRandomly(spamCount, senders.size());
+        spams = new String[SPAM_COUNT];
+        int[] spamRecipientIndices = getIndicesRandomly(SPAM_COUNT, recipients.size());
+        int[] spamSenderIndices = getIndicesRandomly(SPAM_COUNT, senders.size());
         Random rand = new Random();
-        for (int i = 0; i < 50; i++) {
+        for (int i = 0; i < SPAM_COUNT; i++) {
             String template = i < 30? spamTemplates[0] : i < 40? spamTemplates[1] : spamTemplates[2],
                     recipient = recipients.get(spamRecipientIndices[i]),
                     sender = senders.get(spamSenderIndices[i]),
-                    amount = String.format("$%s,000,000", rand.nextInt(10, 50));
+                    amount = String.format("$%s,000,000", rand.nextInt(MONEY_FROM, MONEY_BOUND));
             Spam s = new Spam(template, recipient, sender, amount);
             spams[i] = s.toString();
+        }
+    }
+
+    /**
+     * Generate 50 ham texts, for each of which, length is picked randomly between 30 and 150 words;
+     * words are picked randomly from words.txt.
+     */
+    @BeforeClass
+    public static void setUpHams() {
+        String wordsFile = "words.txt";
+        ArrayList<String> words = readLines(getInputStream(wordsFile));
+
+        hams = new String[HAM_COUNT];
+        Random rand = new Random();
+        for (int i = 0; i < HAM_COUNT; i++) {
+            int length = rand.nextInt(HAM_LEN_FROM, HAM_LEN_BOUND);
+            String[] pickedWords = new String[length];
+            for (int j = 0; j < length; j++)
+                pickedWords[j] = words.get(rand.nextInt(words.size()));
+            hams[i] = String.join(" ", pickedWords);
         }
     }
 

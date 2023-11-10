@@ -11,7 +11,7 @@ public class Batch {
     double[] prs;
 
     public Batch(String[] texts) {
-        hashes = (Nilsimsa[]) Arrays.stream(texts).map(Nilsimsa::getHash).toArray();
+        hashes = Arrays.stream(texts).map(Nilsimsa::getHash).toArray(Nilsimsa[]::new);
 
         // calculate scores of each item in comparison to other items
         scores = new int[hashes.length][];
