@@ -2,7 +2,6 @@ package spamtoy;
 
 import org.junit.After;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.*;
@@ -14,13 +13,11 @@ import java.util.stream.Stream;
 import static org.junit.Assert.*;
 
 public class MainTest {
-    private static final int SPAM_COUNT = 50, HAM_COUNT = 50,
-            MONEY_FROM = 10, MONEY_BOUND = 50,
-            HAM_LEN_FROM = 30, HAM_LEN_BOUND = 151;
+    private static final int MONEY_FROM = 10, MONEY_BOUND = 50,
+            HAM_WORDS_FROM = 30, HAM_WORDS_BOUND = 151;
     private final ByteArrayOutputStream outContent = new ByteArrayOutputStream();
     private final PrintStream originalOut = System.out;
-    private static String[] spams;
-    private static String[] hams;
+    private static ArrayList<String> recipients, senders, words;
 
     @Before
     public void setUpStreams() {
@@ -81,14 +78,21 @@ public class MainTest {
         return lines;
     }
 
+    @Before
+    public void readData() {
+        recipients = readLines(getInputStream("recipients.txt"));
+        senders = readLines(getInputStream("senders.txt"));
+        words = readLines(getInputStream("words.txt"));
+    }
+
     /**
-     * Generate 50 spam texts with 3 templates in `spamTemplates`, 30 with the 1st, 10 the 2nd, and 10 the 3rd.
+     * Generate `spamCount` spam texts with 3 templates in `spamTemplates`
+     * - 60% with the 1st, 20% the 2nd, the rest the 3rd.
      * Texts generated from the same template differ by recipient name, sender name, and an amount of money.
      * Recipient names and sender names are picked randomly from recipients.txt and senders.txt, respectively.
      * Amounts of money are generated randomly.
      */
-    @BeforeClass
-    public static void setUpSpams() {
+    private static String[] setUpSpams(int spamCount) {
         final String[] spamTemplates = new String[]{
             """
             Dear %1$s This is to inform you that after the meeting
@@ -127,47 +131,71 @@ public class MainTest {
             CEO Walgreens Boots Alliance
             %2$s"""
         };
-        String recipientsFile = "recipients.txt", sendersFile = "senders.txt";
-        ArrayList<String> recipients = readLines(getInputStream(recipientsFile));
-        ArrayList<String> senders = readLines(getInputStream(sendersFile));
 
-        spams = new String[SPAM_COUNT];
-        int[] spamRecipientIndices = getIndicesRandomly(SPAM_COUNT, recipients.size());
-        int[] spamSenderIndices = getIndicesRandomly(SPAM_COUNT, senders.size());
+        String[] spams = new String[spamCount];
+        int[] spamRecipientIndices = getIndicesRandomly(spamCount, recipients.size());
+        int[] spamSenderIndices = getIndicesRandomly(spamCount, senders.size());
         Random rand = new Random();
-        for (int i = 0; i < SPAM_COUNT; i++) {
-            String template = i < 30? spamTemplates[0] : i < 40? spamTemplates[1] : spamTemplates[2],
+        int secondCount = spamCount / 5, firstCount = secondCount * 3;
+        for (int i = 0; i < spamCount; i++) {
+            String template = i < firstCount? spamTemplates[0] :
+                    i < (firstCount + secondCount)? spamTemplates[1] : spamTemplates[2],
                     recipient = recipients.get(spamRecipientIndices[i]),
                     sender = senders.get(spamSenderIndices[i]),
                     amount = String.format("$%s,000,000", rand.nextInt(MONEY_FROM, MONEY_BOUND));
             Spam s = new Spam(template, recipient, sender, amount);
             spams[i] = s.toString();
         }
+
+        return spams;
     }
 
     /**
-     * Generate 50 ham texts, for each of which, length is picked randomly between 30 and 150 words;
+     * Generate `hamCount` ham texts, for each of which, length is picked randomly between 30 and 150 words;
      * words are picked randomly from words.txt.
      */
-    @BeforeClass
-    public static void setUpHams() {
-        String wordsFile = "words.txt";
-        ArrayList<String> words = readLines(getInputStream(wordsFile));
-
-        hams = new String[HAM_COUNT];
+    private static String[] setUpHams(int hamCount) {
+        String[] hams = new String[hamCount];
         Random rand = new Random();
-        for (int i = 0; i < HAM_COUNT; i++) {
-            int length = rand.nextInt(HAM_LEN_FROM, HAM_LEN_BOUND);
+        for (int i = 0; i < hamCount; i++) {
+            int length = rand.nextInt(HAM_WORDS_FROM, HAM_WORDS_BOUND);
             String[] pickedWords = new String[length];
             for (int j = 0; j < length; j++)
                 pickedWords[j] = words.get(rand.nextInt(words.size()));
             hams[i] = String.join(" ", pickedWords);
         }
+        return hams;
     }
 
     @Test
-    public void testOut() {
-        Main.main(new String[]{""});
-        assertEquals("Hello world!\n", outContent.toString());
+    public void testHalves() {
+        String[] spams = setUpSpams(500), hams = setUpHams(500);
+        String[] texts = Stream.concat(Arrays.stream(spams), Arrays.stream(hams)).toArray(String[]::new);
+        Batch batch = new Batch(texts);
+        // Groups: 300, 100, 100. Use 0.25 to be sure
+        assertTrue(batch.prs[0] > 0.25);
+        assertEquals(0, batch.prs[500], 0.0);
+    }
+
+    @Test
+    public void testMoreSpams() {
+        String[] spams = setUpSpams(800), hams = setUpHams(200);
+        String[] texts = Stream.concat(Arrays.stream(spams), Arrays.stream(hams)).toArray(String[]::new);
+        Batch batch = new Batch(texts);
+        // Groups: 480, 160, 160. Use 0.4 to be sure
+        assertTrue(batch.prs[0] > 0.4);
+        assertTrue(batch.prs[480] > 0.1);
+        assertEquals(0, batch.prs[800], 0.0);
+    }
+
+    @Test
+    public void testFewerSpams() {
+        String[] spams = setUpSpams(100), hams = setUpHams(900);
+        String[] texts = Stream.concat(Arrays.stream(spams), Arrays.stream(hams)).toArray(String[]::new);
+        Batch batch = new Batch(texts);
+        // Groups: 60, 20, 20. Use 0.01 to be sure
+        assertTrue(batch.prs[0] > 0.01);
+        assertTrue(batch.prs[80] > 0.01);
+        assertEquals(0, batch.prs[100], 0.0);
     }
 }
