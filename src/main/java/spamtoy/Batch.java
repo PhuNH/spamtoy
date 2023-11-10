@@ -4,6 +4,7 @@ import com.weblyzard.lib.string.nilsimsa.Nilsimsa;
 
 import java.util.Arrays;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 public class Batch {
     Nilsimsa[] hashes;
@@ -13,7 +14,7 @@ public class Batch {
     public Batch(String[] texts) {
         hashes = Arrays.stream(texts).map(Nilsimsa::getHash).toArray(Nilsimsa[]::new);
 
-        // calculate scores of each item in comparison to other items
+        // calculate scores of each item in comparison with other items
         scores = new int[hashes.length][];
         // scores[i] has length i (to save space and to halve the number of calls to `bitwiseDifference`).
         for (int i = 1; i < scores.length; i++) {
@@ -25,23 +26,33 @@ public class Batch {
             }
         }
 
+        // normalize all scores by subtracting `lowestScore` from each,
+        // and later probability is calculated with `maxPossible` = 256 - `lowestScore` instead of with 256
+        int lowestScore = Stream.of(scores).mapToInt(a -> a == null ? 256 : Arrays.stream(a).min().orElse(256))
+                .min().orElse(0);
+        for (int i = 1; i < scores.length; i++) {
+            for (int j = 0; j < i; j++)
+                scores[i][j] -= lowestScore;
+        }
+
         prs = new double[scores.length];
+        int maxPossible = 256 - lowestScore;
         for (int i = 0; i < scores.length; i++)
-            prs[i] = prob(i);
+            prs[i] = pr(i, maxPossible);
     }
 
     /**
-     * calculate the average score of item at index i, using:
-     *      sum_of_scores_of_i = sum_by_j(scores[i][j]) + sum_by_k(scores[k][i]) with k > i
-     * then use the percentage between the average score and 256 as the spam probability.
+     * For item at index i, count number of items whose scores with it are higher than 80% of maxPossible.
+     * Its spam probability is the ratio of that number over total number of items.
      */
-    private double prob(int i) {
-        double score_sum = 0;
+    private double pr(int i, int maxPossible) {
+        double scoreThreshold = 0.8 * maxPossible;
+        int similarityCount = 0;
         if (i > 0)
-            score_sum += IntStream.of(scores[i]).asDoubleStream().sum();
+            similarityCount += (int) IntStream.of(scores[i]).filter(c -> c > scoreThreshold).count();
         for (int k = i + 1; k < scores.length; k++)
-            score_sum += scores[k][i];
-        double avg = score_sum / (scores.length - 1);
-        return avg / 256;
+            if (scores[k][i] > scoreThreshold)
+                similarityCount++;
+        return (double) similarityCount / (scores.length - 1);
     }
 }
