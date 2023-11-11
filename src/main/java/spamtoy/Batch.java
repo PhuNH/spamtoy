@@ -37,16 +37,16 @@ public class Batch {
 
         prs = new double[scores.length];
         int maxPossible = 256 - lowestScore;
+        double scoreThreshold = 0.8 * maxPossible;
         for (int i = 0; i < scores.length; i++)
-            prs[i] = pr(i, maxPossible);
+            prs[i] = pr(i, scoreThreshold);
     }
 
     /**
      * For item at index i, count number of items whose scores with it are higher than 80% of maxPossible.
      * Its spam probability is the ratio of that number over total number of items.
      */
-    private double pr(int i, int maxPossible) {
-        double scoreThreshold = 0.8 * maxPossible;
+    private double pr(int i, double scoreThreshold) {
         int similarityCount = 0;
         if (i > 0)
             similarityCount += (int) IntStream.of(scores[i]).filter(c -> c > scoreThreshold).count();
